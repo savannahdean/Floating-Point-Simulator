@@ -1,0 +1,128 @@
+from fractions import Fraction
+
+## this function simulates floating point arithmetic by rounding our number to the required number of bits (1 <= x < 2)
+def fl(x, prec):
+
+    if x == 0: ## returning 0 early since 0 doesn't have a leading 1 in binary and causes an infinite loop if we try to shift it
+        return Fraction(0)
+    
+    sign_bit = 0 if x > 0 else 1 ## storing the sign bit ( 0 for positive and 1 for negative)
+    x = abs(x) ## taking the sign-bit away so we can shift the decimal without it causing issues
+
+    shift = 0     
+    while x >= 2:  ## if x >= 2, divide by 2 and shift the exponent (we're tracking the exponent in shift so we can multiply or divide by 2^shift later)
+        x /= 2
+        shift += 1
+    while x < 1:   ## if x < 1, multiply by 2 and shift the exponent
+        x *= 2
+        shift -= 1
+
+    factor = pow_two(prec - 1)   ## multiplies by 2^(prec-1) by calling my pow_two function to shift the decimal back into place after taking off the excess bits of precision
+    x = Fraction(round(x * factor), factor)
+
+    if shift > 0:  ## if shift > 0, multiply by 2^shift by calling my pow_two function (this is where we use that exponent)
+        x *= pow_two(shift)
+    elif shift < 0:
+        x /= pow_two (abs(shift)) ## if shift < 0, divide by 2^shift by calling my pow_two function
+
+    if sign_bit == 1: ## flipping the sign bit to get it back to the original sign for the 2sum error calculations
+        x = -x 
+
+    return x  
+
+## this function calculates 2^n
+def pow_two(n):
+    x = 1
+    for i in range(n):
+        x *= 2
+    return x
+
+
+## this function calculates the sum of the harmonic series using the built-in sum function
+def builtin_sum(x):
+    return sum(1.0/i for i in range(1, x + 1))
+
+## this function calculates the sum of the harmonic series using a for loop that iterates from 1 to x and adds 1/i to the sum
+def naive_sum(x):
+    s = 0.0
+    for i in range(1,x + 1):
+        s += 1.0/i
+    return s
+
+## this function simulates the sum of the harmonic series by wrapping our math in fl to chop up the fraction into the required number of bits
+def naive_sum_sim(x, prec):
+    s = Fraction(0)
+    for i in range(1, x + 1):
+        val = Fraction(1, i)
+        s = fl(s + val, prec)
+    return s
+
+## this function simulates the sum of the harmonic series using the kahan summation algorithm. It calls the two_sum_sim function to calculate both the sum of two numbers 
+## and the rounding error and then folds it back into the next iteration 
+def kahan_sum_sim(x, prec):
+   s = Fraction(0)
+   e = Fraction(0)
+
+   for i in range(1, x + 1):
+       val = Fraction(1, i)
+       val_plus_error = fl(val + e, prec)
+       s,e = two_sum_sim(s, val_plus_error, prec)
+   return s
+
+## this function simulates the 2sum algorithm to calculate both the sum of two numbers and the rounding error, wrapping our math in fl to chop up the fraction into the required number of bits
+def two_sum_sim(a, b, prec):
+    s = fl(a + b, prec)
+
+    a_prime = fl(s - b, prec)
+    b_prime = fl(s - a_prime, prec)
+
+    delta_a = fl(a - a_prime, prec)
+    delta_b = fl(b - b_prime, prec)
+
+    err = fl(delta_a + delta_b, prec)
+    return s, err
+
+def main():
+    
+    x = 10000 ## defining n as 10,000
+
+    analytic_sum = Fraction(0) ## 1. our analytic solution using Fraction (sum of harmonic series)
+    for i in range(1, x + 1):
+        analytic_sum += Fraction(1, i)  
+
+    analytic_float = float(analytic_sum) ## analytic_float is used as our baseline. I subtract the simulated sums from the value we got from here to calculate our absolute errors
+    print(f"analytic ------------------------------------ {analytic_float:.17f} -------------------------------\n")
+
+    builtin_val = builtin_sum(x) ## 2. our builtin sum function using double precision float
+    builtin_err = abs(analytic_float - builtin_val)
+    print(f"builtin sum            | builtin double     | {builtin_val:.17f} | abs error {builtin_err:.17f}\n") 
+
+    naive_val = naive_sum(x) ## 3. our native summation using double precision float
+    naive_err = abs(analytic_float - naive_val)
+    print(f"naive sum              | builtin double     | {naive_val:.17f} | abs error {naive_err:.17f}\n")
+
+    naive_53_val = float(naive_sum_sim(x,53)) ## 4. our native summation using simulated double precision (53 bits)
+    naive_53_err = abs(analytic_float - naive_53_val)
+    print(f"naive sum              | simulated double   | {naive_53_val:.17f} | abs error {naive_53_err:.17f}\n")
+
+    kahan_53_val = float(kahan_sum_sim(x, 53)) ## 5. our kahan summation with 2sum simulated double precision (53 bits)
+    kahan_53_err = abs(analytic_float - kahan_53_val)
+    print(f"kahan sum              | simulated double   | {kahan_53_val:.17f} | abs error {kahan_53_err:.17f}\n")
+
+    naive_24_val = float(naive_sum_sim(x,24)) ##6. our naive summation using simulated single precision (24 bits)
+    naive_24_err = abs(analytic_float - naive_24_val)
+    print(f"naive sum              | simulated single   | {naive_24_val:.17f} | abs error {naive_24_err:.17f}\n")
+
+    kahan_24_val = float(kahan_sum_sim(x, 24))  ##7. our kahan summation with 2sum using simulated single precision (24 bits)
+    kahan_24_err =abs(analytic_float - kahan_24_val)
+    print(f"kahan sum              | simulated single   | {kahan_24_val:.17f} | abs error {kahan_24_err:.17f}\n")
+
+    naive_64_val = float(naive_sum_sim(x,64)) #8. our naive summation using simulated long double precision (64 bits)
+    naive_64_err = abs(analytic_float - naive_64_val)
+    print(f"naive sum           | simulated long double | {naive_64_val:.17f} | abs error {naive_64_err:.17f}\n")
+
+    kahan_64_val = float(kahan_sum_sim(x, 64))  ## 9. our kahan summation with 2sum using simulated long double precision (64 bits)
+    kahan_64_err = abs(analytic_float - kahan_64_val)  
+    print(f"kahan sum           | simulated long double | {kahan_64_val:.17f} | abs error {kahan_64_err:.17f}\n")
+
+main()
